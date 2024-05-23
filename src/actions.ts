@@ -170,15 +170,9 @@ export class PlasmicAction {
     if (newBranch) {
       await exec(`git checkout -B '${newBranch}'`, this.opts);
     }
-    await exec(`${pm.add} @plasmicapp/cli`, this.opts);
+    await exec(`${pm.add} @plasmicapp/cli@0.1.330`, this.opts);
     await exec(
-      `${
-        this.args.projectHost
-          ? `PLASMIC_DEFAULT_HOST=${this.args.projectHost} `
-          : ""
-      }${pm.cmd} plasmic sync --projects '${this.args.projectId}:${
-        this.args.projectApiToken
-      }' --yes`,
+      `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${this.args.projectApiToken}' --yes`,
       this.opts
     );
     return (await this.commit(newBranch || this.args.branch))
