@@ -7,7 +7,7 @@ import {
   mkPrBranchName,
   Outputs,
 } from "./util";
-import { create, setMetadata } from "create-plasmic-app";
+import { create, setMetadata, installCli } from "create-plasmic-app";
 
 export type RunAction = "init" | "sync" | "build";
 export type Platform = "nextjs" | "gatsby" | "react" | "";
@@ -170,7 +170,7 @@ export class PlasmicAction {
     if (newBranch) {
       await exec(`git checkout -B '${newBranch}'`, this.opts);
     }
-    await exec(`${pm.add} @plasmicapp/cli@0.1.330`, this.opts);
+    await installCli(path.resolve(this.opts.cwd));
     await exec(
       `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${this.args.projectApiToken}' --yes`,
       this.opts
