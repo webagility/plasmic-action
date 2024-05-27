@@ -160,7 +160,7 @@ index aefeb07..8a208a6 100644
 -export declare function makePlasmicInit_app_loader(projectId: string, projectApiToken: string): string;
 +export declare function makePlasmicInit_app_loader(projectId: string, projectApiToken: string, projectHost?: string): string;
 diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
-index 94d446d..9fcaf98 100644
+index 94d446d..a40c545 100644
 --- a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
 +++ b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
 @@ -1,7 +1,7 @@
@@ -172,17 +172,16 @@ index 94d446d..9fcaf98 100644
      return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs/react-server-conditional";
  
  export const PLASMIC = initPlasmicLoader({
-@@ -16,7 +16,9 @@ export const PLASMIC = initPlasmicLoader({
+@@ -10,7 +10,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
    // For development, you can set preview to true, which will use the unpublished
-   // project, allowing you to see your designs without publishing.  Please
-   // only use this for development, as this is significantly slower.
--  preview: false,
-+  preview: false,${projectHost ? `
-+  host: ${projectHost},
-+  ` : ""}
- });
- `;
- }
 diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts
 index eed54c6..1f3439d 100644
 --- a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts
@@ -191,7 +190,7 @@ index eed54c6..1f3439d 100644
 -export declare function makePlasmicInit_pages_loader(projectId: string, projectApiToken: string): string;
 +export declare function makePlasmicInit_pages_loader(projectId: string, projectApiToken: string, projectHost?: string): string;
 diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
-index 27cca21..0fc7547 100644
+index 27cca21..8251fe0 100644
 --- a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
 +++ b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
 @@ -1,7 +1,7 @@
@@ -203,17 +202,16 @@ index 27cca21..0fc7547 100644
      return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs";
  
  export const PLASMIC = initPlasmicLoader({
-@@ -16,7 +16,9 @@ export const PLASMIC = initPlasmicLoader({
-   // For development, you can set preview to true, which will use the unpublished
-   // project, allowing you to see your designs without publishing.  Please
-   // only use this for development, as this is significantly slower.
--  preview: false,
-+  preview: false,${projectHost ? `
-+  host: ${projectHost},
-+  ` : ""}
- });
+@@ -10,7 +10,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
  
- // You can register any code components that you want to use here; see
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
 diff --git a/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.d.ts b/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.d.ts
 new file mode 100644
 index 0000000..8ebc53d
@@ -749,7 +747,7 @@ index 29da48c..30144dc 100644
      });
  
 diff --git a/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts b/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
-index 1117dc3..d49c86c 100644
+index 1117dc3..cf87a8b 100644
 --- a/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
 +++ b/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
 @@ -1,6 +1,7 @@
@@ -761,19 +759,18 @@ index 1117dc3..d49c86c 100644
  ): string {
    return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs/react-server-conditional";
  
-@@ -16,7 +17,9 @@ export const PLASMIC = initPlasmicLoader({
+@@ -10,7 +11,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
    // For development, you can set preview to true, which will use the unpublished
-   // project, allowing you to see your designs without publishing.  Please
-   // only use this for development, as this is significantly slower.
--  preview: false,
-+  preview: false,${projectHost ? `
-+  host: ${projectHost},
-+  ` : ""}
- });
- `;
- }
 diff --git a/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts b/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
-index fac8629..d3b9534 100644
+index fac8629..65b4851 100644
 --- a/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
 +++ b/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
 @@ -1,6 +1,7 @@
@@ -785,17 +782,16 @@ index fac8629..d3b9534 100644
  ): string {
    return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs";
  
-@@ -16,7 +17,9 @@ export const PLASMIC = initPlasmicLoader({
-   // For development, you can set preview to true, which will use the unpublished
-   // project, allowing you to see your designs without publishing.  Please
-   // only use this for development, as this is significantly slower.
--  preview: false,
-+  preview: false,${projectHost ? `
-+  host: ${projectHost},
-+  ` : ""}
- });
+@@ -10,7 +11,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
  
- // You can register any code components that you want to use here; see
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
 diff --git a/node_modules/create-plasmic-app/src/templates/patches/@plasmicapp+cli+0.1.330.patch.ts b/node_modules/create-plasmic-app/src/templates/patches/@plasmicapp+cli+0.1.330.patch.ts
 new file mode 100644
 index 0000000..a3d3601
