@@ -8,8 +8,9 @@
     "build": "tsc",
     "format": "prettier --write **/*.ts",
     "format-check": "prettier --check **/*.ts",
-    "all": "yarn install && npx patch-package --yes && npm run build && npm run format",
-    "add-dist": "git add lib"
+    "all": "yarn install && npx --yes patch-package && npm run build && npm run format",
+    "add-dist": "git add lib",
+    "postinstall": "patch-package"
   },
   "pre-commit": [
     "format-check",
@@ -34,6 +35,7 @@
     "@sentry/tracing": "^6.2.5",
     "create-plasmic-app": "^0.0.90",
     "nanoid": "^3.1.22",
+    "patch-package": "^6",
     "semver": "^7.4.0"
   },
   "devDependencies": {
