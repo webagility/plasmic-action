@@ -172,7 +172,11 @@ export class PlasmicAction {
     }
     await installCli(path.resolve(this.opts.cwd));
     await exec(
-      `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${this.args.projectApiToken}' --yes`,
+      `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${
+        this.args.projectApiToken
+      }' --yes${
+        this.args.projectHost ? ` --host ${this.args.projectHost}` : ""
+      }`,
       this.opts
     );
     return (await this.commit(newBranch || this.args.branch))
