@@ -7,7 +7,7 @@ import {
   mkPrBranchName,
   Outputs,
 } from "./util";
-import { create, setMetadata } from "create-plasmic-app";
+import { create, setMetadata, installCli } from "create-plasmic-app";
 
 export type RunAction = "init" | "sync" | "build";
 export type Platform = "nextjs" | "gatsby" | "react" | "";
@@ -28,6 +28,7 @@ export type PlasmicActionOptions = {
 
   projectId: string;
   projectApiToken: string;
+  projectHost: string;
 
   platform: Platform;
   scheme: Scheme;
@@ -90,6 +91,7 @@ export class PlasmicAction {
     assertNoSingleQuotes(this.args.scheme);
     assertNoSingleQuotes(this.args.projectId);
     assertNoSingleQuotes(this.args.projectApiToken);
+    assertNoSingleQuotes(this.args.projectHost);
 
     if (this.args.platform === "" || this.args.scheme === "") {
       throw new Error("Platform and scheme must be specified.");
@@ -105,6 +107,7 @@ export class PlasmicAction {
       resolvedProjectPath: path.resolve(this.opts.cwd, relTmpDir),
       projectId: this.args.projectId,
       projectApiToken: this.args.projectApiToken,
+      projectHost: this.args.projectHost,
       platform: this.args.platform,
       scheme: this.args.scheme,
       jsOrTs: this.args.language || "ts",
@@ -161,14 +164,19 @@ export class PlasmicAction {
     }
     assertNoSingleQuotes(this.args.projectId);
     assertNoSingleQuotes(this.args.projectApiToken);
+    assertNoSingleQuotes(this.args.projectHost);
 
     await exec(`git checkout '${this.args.branch}'`, this.opts);
     if (newBranch) {
       await exec(`git checkout -B '${newBranch}'`, this.opts);
     }
-    await exec(`${pm.add} @plasmicapp/cli`, this.opts);
+    await installCli(path.resolve(this.opts.cwd));
     await exec(
-      `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${this.args.projectApiToken}' --yes`,
+      `${pm.cmd} plasmic sync --projects '${this.args.projectId}:${
+        this.args.projectApiToken
+      }' --yes${
+        this.args.projectHost ? ` --host ${this.args.projectHost}` : ""
+      }`,
       this.opts
     );
     return (await this.commit(newBranch || this.args.branch))

@@ -1,0 +1,1154 @@
+diff --git a/node_modules/create-plasmic-app/dist/lib.d.ts b/node_modules/create-plasmic-app/dist/lib.d.ts
+index 3a4386f..4f06e9b 100644
+--- a/node_modules/create-plasmic-app/dist/lib.d.ts
++++ b/node_modules/create-plasmic-app/dist/lib.d.ts
+@@ -8,9 +8,11 @@ export interface CreatePlasmicAppArgs {
+     scheme: SchemeType;
+     jsOrTs: JsOrTs;
+     projectApiToken?: string;
++    projectHost?: string;
+     template?: string;
+ }
+ export declare function create(args: CreatePlasmicAppArgs): Promise<void>;
++export declare function installCli(path: string): Promise<boolean>;
+ export declare function checkValidName(name?: string): boolean;
+ export declare function checkProjectInput(input: string): boolean;
+ /** Gets a project ID from an ID itself or a URL. */
+diff --git a/node_modules/create-plasmic-app/dist/lib.js b/node_modules/create-plasmic-app/dist/lib.js
+index dc40323..16f7c1e 100644
+--- a/node_modules/create-plasmic-app/dist/lib.js
++++ b/node_modules/create-plasmic-app/dist/lib.js
+@@ -37,10 +37,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.setMetadata = exports.banner = exports.extractProjectId = exports.checkProjectInput = exports.checkValidName = exports.create = void 0;
+ const cli_1 = require("@plasmicapp/cli");
++const fs_1 = require("fs");
++const path_1 = __importDefault(require("path"));
+ const chalk_1 = __importDefault(require("chalk"));
+ const path = __importStar(require("upath"));
+ const validate_npm_package_name_1 = __importDefault(require("validate-npm-package-name"));
++const plasmic_patch_1 = require("./templates/patches/@plasmicapp+cli+0.1.330.patch");
+ const file_utils_1 = require("./utils/file-utils");
++const cmd_utils_1 = require("./utils/cmd-utils");
+ const npm_utils_1 = require("./utils/npm-utils");
+ function getCPAStrategy(platform) {
+     return __awaiter(this, void 0, void 0, function* () {
+@@ -56,12 +60,13 @@ function getCPAStrategy(platform) {
+ }
+ function create(args) {
+     return __awaiter(this, void 0, void 0, function* () {
+-        const { resolvedProjectPath, projectId, platform, platformOptions, scheme, jsOrTs, template, } = args;
++        const { resolvedProjectPath, projectId, projectHost, platform, platformOptions, scheme, jsOrTs, template, } = args;
+         let { projectApiToken } = args;
+         console.log("Let's get started! Here's what we'll do: ");
+         console.log("1. Authenticate with Plasmic");
+         console.log("2. Create a React/Next/Gatsby repo");
+         console.log("3. Integrate with Plasmic");
++        console.log(`4. Host: ${projectHost || "N/A"}`);
+         // Authenticate with Plasmic
+         banner("AUTHENTICATING WITH PLASMIC");
+         if (projectApiToken) {
+@@ -69,11 +74,11 @@ function create(args) {
+         }
+         else {
+             const promise = (0, cli_1.auth)({
+-                host: "https://studio.plasmic.app",
++                host: "https://squirrel.dev",
+                 check: true,
+             })
+                 .catch(() => {
+-                return (0, cli_1.auth)({ host: "https://studio.plasmic.app" });
++                return (0, cli_1.auth)({ host: "https://squirrel.dev" });
+             })
+                 .catch(() => {
+                 throw new Error("Failed to authenticate with Plasmic. Please run `npx @plasmicapp/cli auth` manually.");
+@@ -124,6 +129,7 @@ function create(args) {
+             projectId,
+             projectPath: resolvedProjectPath,
+             projectApiToken,
++            projectHost,
+             jsOrTs,
+             scheme,
+             platformOptions,
+@@ -135,6 +141,7 @@ function create(args) {
+             scheme,
+             projectId,
+             projectApiToken,
++            projectHost,
+             platformOptions,
+         });
+         /**
+@@ -172,6 +179,32 @@ function create(args) {
+     });
+ }
+ exports.create = create;
++async function installCli(projectPath) {
++    return __awaiter(this, void 0, void 0, function* () {
++        yield fs_1.promises.mkdir(path_1.default.join(projectPath, "patches"));
++        yield fs_1.promises.writeFile(
++            path_1.default.join(projectPath, "patches", "@plasmicapp+cli+0.1.330.patch"),
++            (0, plasmic_patch_1.makePlasmicPatch_plasmicapp_cli)()
++        );
++    
++        const packageJsonFile = path_1.default.join(projectPath, "package.json");
++        const packageJson = JSON.parse(yield fs_1.promises.readFile(packageJsonFile, 'utf8'));
++    
++        yield fs_1.promises.writeFile(
++            packageJsonFile,
++            JSON.stringify({ ...packageJson, scripts: { ...packageJson.scripts, postinstall: "patch-package" } }, null, 2)
++        );
++    
++        yield (0, npm_utils_1.installUpgrade)("patch-package@^6", { workingDir: projectPath });
++    
++        const result = yield (0, npm_utils_1.installUpgrade)("@plasmicapp/cli@0.1.330", { workingDir: projectPath });
++    
++        yield (0, cmd_utils_1.spawnOrFail)("npx patch-package", projectPath);
++    
++        return result;
++    });
++}
++exports.installCli = installCli;
+ function checkValidName(name) {
+     // User need to specify a truthy value
+     if (!name) {
+diff --git a/node_modules/create-plasmic-app/dist/nextjs/nextjs.js b/node_modules/create-plasmic-app/dist/nextjs/nextjs.js
+index 9e05d39..e90b014 100644
+--- a/node_modules/create-plasmic-app/dist/nextjs/nextjs.js
++++ b/node_modules/create-plasmic-app/dist/nextjs/nextjs.js
+@@ -106,11 +106,11 @@ module.exports = nextConfig;`);
+ };
+ function generateFilesAppDir(args) {
+     return __awaiter(this, void 0, void 0, function* () {
+-        const { projectPath, jsOrTs, projectId, projectApiToken } = args;
++        const { projectPath, jsOrTs, projectId, projectApiToken, projectHost } = args;
+         // Delete existing pages
+         (0, file_utils_1.deleteGlob)(path_1.default.join(projectPath, "app", "page.*"));
+         // ./plasmic-init.ts
+-        yield fs_1.promises.writeFile(path_1.default.join(projectPath, `plasmic-init.${jsOrTs}`), (0, plasmic_init_1.makePlasmicInit_app_loader)(projectId, (0, lang_utils_1.ensure)(projectApiToken)));
++        yield fs_1.promises.writeFile(path_1.default.join(projectPath, `plasmic-init.${jsOrTs}`), (0, plasmic_init_1.makePlasmicInit_app_loader)(projectId, (0, lang_utils_1.ensure)(projectApiToken), projectHost));
+         // ./plasmic-init-client.ts
+         yield fs_1.promises.writeFile(path_1.default.join(projectPath, `plasmic-init-client.${jsOrTs}x`), (0, plasmic_init_client_1.makePlasmicInitClient_app_loader)(jsOrTs));
+         // ./app/plasmic-host/page.tsx
+@@ -123,12 +123,12 @@ function generateFilesAppDir(args) {
+ }
+ function generateFilesPagesDir(args) {
+     return __awaiter(this, void 0, void 0, function* () {
+-        const { projectPath, scheme, jsOrTs, projectId, projectApiToken } = args;
++        const { projectPath, scheme, jsOrTs, projectId, projectApiToken, projectHost } = args;
+         // Delete existing pages
+         (0, file_utils_1.deleteGlob)(path_1.default.join(projectPath, "pages", "*.*"));
+         if (scheme === "loader") {
+             // ./plasmic-init.ts
+-            yield fs_1.promises.writeFile(path_1.default.join(projectPath, `plasmic-init.${jsOrTs}`), (0, plasmic_init_2.makePlasmicInit_pages_loader)(projectId, (0, lang_utils_1.ensure)(projectApiToken)));
++            yield fs_1.promises.writeFile(path_1.default.join(projectPath, `plasmic-init.${jsOrTs}`), (0, plasmic_init_2.makePlasmicInit_pages_loader)(projectId, (0, lang_utils_1.ensure)(projectApiToken), projectHost));
+             // ./pages/plasmic-host.tsx
+             yield fs_1.promises.writeFile(path_1.default.join(projectPath, "pages", `plasmic-host.${jsOrTs}x`), (0, plasmic_host_3.makePlasmicHostPage_pages_loader)());
+             // ./pages/[[...catchall]].tsx
+@@ -146,6 +146,7 @@ function generateFilesPagesDir(args) {
+             yield (0, codegen_1.runCodegenSync)({
+                 projectId,
+                 projectApiToken,
++                projectHost,
+                 projectPath,
+             });
+             // Make an index page if the project didn't have one.
+diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.d.ts b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.d.ts
+index aefeb07..8a208a6 100644
+--- a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.d.ts
++++ b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.d.ts
+@@ -1 +1 @@
+-export declare function makePlasmicInit_app_loader(projectId: string, projectApiToken: string): string;
++export declare function makePlasmicInit_app_loader(projectId: string, projectApiToken: string, projectHost?: string): string;
+diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
+index 94d446d..a40c545 100644
+--- a/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
++++ b/node_modules/create-plasmic-app/dist/nextjs/templates/app-loader/plasmic-init.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.makePlasmicInit_app_loader = void 0;
+-function makePlasmicInit_app_loader(projectId, projectApiToken) {
++function makePlasmicInit_app_loader(projectId, projectApiToken, projectHost) {
+     return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs/react-server-conditional";
+ 
+ export const PLASMIC = initPlasmicLoader({
+@@ -10,7 +10,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
+diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts
+index eed54c6..1f3439d 100644
+--- a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts
++++ b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.d.ts
+@@ -1 +1 @@
+-export declare function makePlasmicInit_pages_loader(projectId: string, projectApiToken: string): string;
++export declare function makePlasmicInit_pages_loader(projectId: string, projectApiToken: string, projectHost?: string): string;
+diff --git a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
+index 27cca21..8251fe0 100644
+--- a/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
++++ b/node_modules/create-plasmic-app/dist/nextjs/templates/pages-loader/plasmic-init.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.makePlasmicInit_pages_loader = void 0;
+-function makePlasmicInit_pages_loader(projectId, projectApiToken) {
++function makePlasmicInit_pages_loader(projectId, projectApiToken, projectHost) {
+     return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs";
+ 
+ export const PLASMIC = initPlasmicLoader({
+@@ -10,7 +10,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
+diff --git a/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.d.ts b/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.d.ts
+new file mode 100644
+index 0000000..8ebc53d
+--- /dev/null
++++ b/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.d.ts
+@@ -0,0 +1 @@
++export declare function makePlasmicPatch_plasmicapp_cli(): string;
+diff --git a/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.js b/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.js
+new file mode 100644
+index 0000000..56ba50b
+--- /dev/null
++++ b/node_modules/create-plasmic-app/dist/templates/patches/@plasmicapp+cli+0.1.330.patch.js
+@@ -0,0 +1,300 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.makePlasmicPatch_plasmicapp_cli = void 0;
++function makePlasmicPatch_plasmicapp_cli() {
++    return `diff --git a/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts b/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
++index 9ac892e..f696f62 100644
++--- a/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
+++++ b/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
++@@ -2,6 +2,7 @@ import { CommonArgs } from "..";
++ import { Metadata } from "../utils/get-context";
++ export interface SyncArgs extends CommonArgs {
++     projects: readonly string[];
+++    host: string;
++     forceOverwrite: boolean;
++     yes?: boolean;
++     force?: boolean;
++diff --git a/node_modules/@plasmicapp/cli/dist/index.js b/node_modules/@plasmicapp/cli/dist/index.js
++index c2e64c2..670452a 100755
++--- a/node_modules/@plasmicapp/cli/dist/index.js
+++++ b/node_modules/@plasmicapp/cli/dist/index.js
++@@ -501873,7 +501873,7 @@ var handleError = (p) => {
++ };
++ 
++ // src/utils/config-utils.ts
++-var DEFAULT_HOST = process.env.PLASMIC_DEFAULT_HOST || "https://studio.plasmic.app";
+++var DEFAULT_HOST = process.env.PLASMIC_DEFAULT_HOST || "https://squirrel.dev";
++ var AUTH_FILE_NAME = ".plasmic.auth";
++ var CONFIG_FILE_NAME = "plasmic.json";
++ var LOCK_FILE_NAME = "plasmic.lock";
++@@ -502270,7 +502270,7 @@ var PlasmicApi = class {
++   }
++   get codegenHost() {
++     if (!this.auth.host || this.auth.host === DEFAULT_HOST) {
++-      return "https://codegen.plasmic.app";
+++      return "https://api.squirrel.dev";
++     } else {
++       return this.auth.host;
++     }
++@@ -503432,7 +503432,7 @@ async function getContext(args, {
++ } = {}) {
++   if (!args.baseDir)
++     args.baseDir = process.cwd();
++-  const auth2 = enableSkipAuth ? await getCurrentOrDefaultAuth(args) : await getOrInitAuth(args);
+++  const auth2 = enableSkipAuth ? await getCurrentOrDefaultAuth({ ...args, enableSkipAuth }) : await getOrInitAuth(args);
++   if (auth2.host.startsWith(DEFAULT_HOST)) {
++     Sentry.init({
++       dsn: "https://3ed4eb43d28646e381bf3c50cff24bd6@o328029.ingest.sentry.io/5285892"
++@@ -503480,12 +503480,13 @@ async function getContext(args, {
++   return context;
++ }
++ async function getCurrentOrDefaultAuth(args) {
++-  const auth2 = await getCurrentAuth(args.auth);
+++  // const auth2 = await getCurrentAuth(args.auth);
+++  const auth2 = await getOrStartAuth(args);
++   if (auth2) {
++     return auth2;
++   }
++   return {
++-    host: DEFAULT_HOST,
+++    host: args.host || DEFAULT_HOST,
++     user: "",
++     token: ""
++   };
++@@ -505605,7 +505606,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++       describe: "Enable skipping auth, just initialize a plasmic.json",
++       type: "boolean",
++       default: false
++-    }).option("host", getYargsOption("host", "https://studio.plasmic.app")).option("platform", getYargsOption("platform")).option("code-lang", getYargsOption("codeLang")).option("code-scheme", getYargsOption("codeScheme")).option("react-runtime", {
+++    }).option("host", getYargsOption("host", DEFAULT_HOST)).option("platform", getYargsOption("platform")).option("code-lang", getYargsOption("codeLang")).option("code-scheme", getYargsOption("codeScheme")).option("react-runtime", {
++       describe: "React runtime to use; either classic or automatic",
++       choices: ["classic", "automatic"],
++       default: "classic"
++@@ -505622,7 +505623,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++     yags.option("host", {
++       describe: "Plasmic host to use",
++       type: "string",
++-      default: "https://studio.plasmic.app"
+++      default: DEFAULT_HOST
++     }).option("check", {
++       alias: "c",
++       describe: "Just verifies if the current credentials are valid.",
++@@ -505676,7 +505677,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   (yags) => yags.option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }).option("projects", {
++     alias: "p",
++     describe: "ID of plasmic project to check",
++@@ -505741,7 +505742,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   }).option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }),
++   (argv) => handleError(projectToken(argv))
++ ).command(
++@@ -505754,7 +505755,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   }).option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }).option("format", {
++     describe: 'Output format. Either "json", "po" or "lingui"',
++     type: "string",
++@@ -505802,6 +505803,10 @@ function configureSyncArgs(yags, includeQuietOption = true) {
++     describe: "One or more projects to sync, separated by comma. Version constraints can be specified using @. Example: projectid, projectid@>=version",
++     type: "array",
++     default: []
+++  }).option("host", {
+++    describe: "Plasmic host to use",
+++    type: "string",
+++    default: DEFAULT_HOST
++   }).option("force", {
++     type: "boolean",
++     describe: "Force sync to bypass specified version ranges.",
++diff --git a/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts b/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
++index e9534eb..d5b9980 100644
++--- a/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
+++++ b/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
++@@ -1,7 +1,7 @@
++ import { CommonArgs } from "../index";
++ import { PlasmicContext, PlasmicLock } from "./config-utils";
++ export declare function readLock(lockFile: string): PlasmicLock;
++-export declare function getContext(args: CommonArgs, { enableSkipAuth, skipMissingFiles, skipInit, }?: {
+++export declare function getContext(args: CommonArgs & { host: string }, { enableSkipAuth, skipMissingFiles, skipInit, }?: {
++     enableSkipAuth?: boolean;
++     skipMissingFiles?: boolean;
++     skipInit?: boolean;
++@@ -9,7 +9,7 @@ export declare function getContext(args: CommonArgs, { enableSkipAuth, skipMissi
++ /**
++  * Use empty user/token to signify no auth (only returning to provide a default host).
++  */
++-export declare function getCurrentOrDefaultAuth(args: CommonArgs): Promise<import("./config-utils").AuthConfig>;
+++export declare function getCurrentOrDefaultAuth(args: CommonArgs & { host: string; enableSkipAuth?: boolean }): Promise<import("./config-utils").AuthConfig>;
++ /**
++  * Table of where this metadata will be set
++  *
++diff --git a/node_modules/@plasmicapp/cli/src/actions/sync.ts b/node_modules/@plasmicapp/cli/src/actions/sync.ts
++index 06d5710..e8bddf6 100644
++--- a/node_modules/@plasmicapp/cli/src/actions/sync.ts
+++++ b/node_modules/@plasmicapp/cli/src/actions/sync.ts
++@@ -61,6 +61,7 @@ import { upsertStyleTokens } from "./sync-styles";
++ 
++ export interface SyncArgs extends CommonArgs {
++   projects: readonly string[];
+++  host: string;
++   forceOverwrite: boolean;
++   yes?: boolean;
++   force?: boolean;
++diff --git a/node_modules/@plasmicapp/cli/src/api.ts b/node_modules/@plasmicapp/cli/src/api.ts
++index 058fe45..2dfcc68 100644
++--- a/node_modules/@plasmicapp/cli/src/api.ts
+++++ b/node_modules/@plasmicapp/cli/src/api.ts
++@@ -545,7 +545,7 @@ export class PlasmicApi {
++ 
++   private get codegenHost() {
++     if (!this.auth.host || this.auth.host === DEFAULT_HOST) {
++-      return "https://codegen.plasmic.app";
+++      return "https://api.squirrel.dev";
++     } else {
++       return this.auth.host;
++     }
++diff --git a/node_modules/@plasmicapp/cli/src/index.ts b/node_modules/@plasmicapp/cli/src/index.ts
++index 1ee2787..3fb6f35 100644
++--- a/node_modules/@plasmicapp/cli/src/index.ts
+++++ b/node_modules/@plasmicapp/cli/src/index.ts
++@@ -15,6 +15,7 @@ import { UploadBundleArgs, uploadJsBundle } from "./actions/upload-bundle";
++ import { WatchArgs, watchProjects } from "./actions/watch";
++ import { handleError } from "./utils/error";
++ import { ExportArgs, exportProjectsCli } from "./actions/export";
+++import { DEFAULT_HOST } from "@plasmicapp/cli/src/utils/config-utils";
++ 
++ if (process.env.DEBUG_CHDIR) {
++   process.chdir(process.env.DEBUG_CHDIR);
++@@ -59,7 +60,7 @@ yargs
++           type: "boolean",
++           default: false,
++         })
++-        .option("host", getYargsOption("host", "https://studio.plasmic.app"))
+++        .option("host", getYargsOption("host", DEFAULT_HOST))
++         .option("platform", getYargsOption("platform"))
++         .option("code-lang", getYargsOption("codeLang"))
++         .option("code-scheme", getYargsOption("codeScheme"))
++@@ -89,7 +90,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("check", {
++           alias: "c",
++@@ -153,7 +154,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("projects", {
++           alias: "p",
++@@ -243,7 +244,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         }),
++     (argv) => handleError(projectToken.projectToken(argv))
++   )
++@@ -261,7 +262,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("format", {
++           describe: 'Output format. Either "json", "po" or "lingui"',
++@@ -341,6 +342,11 @@ function configureSyncArgs(
++       type: "array",
++       default: [],
++     })
+++    .option("host", {
+++      describe: "Plasmic host to use",
+++      type: "string",
+++      default: DEFAULT_HOST,
+++    })
++     .option("force", {
++       type: "boolean",
++       describe: "Force sync to bypass specified version ranges.",
++diff --git a/node_modules/@plasmicapp/cli/src/utils/config-utils.ts b/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
++index 739918c..18bf440 100644
++--- a/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
+++++ b/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
++@@ -12,7 +12,7 @@ import {
++ } from "./file-utils";
++ 
++ export const DEFAULT_HOST =
++-  process.env.PLASMIC_DEFAULT_HOST || "https://studio.plasmic.app";
+++  process.env.PLASMIC_DEFAULT_HOST || "https://squirrel.dev";
++ 
++ // Default filenames
++ export const AUTH_FILE_NAME = ".plasmic.auth";
++diff --git a/node_modules/@plasmicapp/cli/src/utils/get-context.ts b/node_modules/@plasmicapp/cli/src/utils/get-context.ts
++index e1a36d8..ed6bd30 100644
++--- a/node_modules/@plasmicapp/cli/src/utils/get-context.ts
+++++ b/node_modules/@plasmicapp/cli/src/utils/get-context.ts
++@@ -8,7 +8,7 @@ import { logger } from "../deps";
++ import { CommonArgs } from "../index";
++ import { runNecessaryMigrations } from "../migrations/migrations";
++ import { HandledError } from "../utils/error";
++-import { getCurrentAuth } from "./auth-utils";
+++import { getCurrentAuth, getOrStartAuth } from "./auth-utils";
++ import {
++   DEFAULT_HOST,
++   findConfigFile,
++@@ -298,7 +298,7 @@ async function resolveMissingFilesInConfig(
++ }
++ 
++ export async function getContext(
++-  args: CommonArgs,
+++  args: CommonArgs & { host: string },
++   {
++     enableSkipAuth = false,
++     skipMissingFiles = false,
++@@ -311,7 +311,7 @@ export async function getContext(
++ ): Promise<PlasmicContext> {
++   if (!args.baseDir) args.baseDir = process.cwd();
++   const auth = enableSkipAuth
++-    ? await getCurrentOrDefaultAuth(args)
+++    ? await getCurrentOrDefaultAuth({ ...args, enableSkipAuth })
++     : await getOrInitAuth(args);
++ 
++   /** Sentry */
++@@ -379,14 +379,15 @@ export async function getContext(
++ /**
++  * Use empty user/token to signify no auth (only returning to provide a default host).
++  */
++-export async function getCurrentOrDefaultAuth(args: CommonArgs) {
++-  const auth = await getCurrentAuth(args.auth);
+++export async function getCurrentOrDefaultAuth(args: CommonArgs & { host: string; enableSkipAuth?: boolean }) {
+++  // const auth = await getCurrentAuth(args.auth);
+++  const auth = await getOrStartAuth(args);
++   if (auth) {
++     return auth;
++   }
++ 
++   return {
++-    host: DEFAULT_HOST,
+++    host: args.host || DEFAULT_HOST,
++     user: "",
++     token: "",
++   };`;
++}
++exports.makePlasmicPatch_plasmicapp_cli = makePlasmicPatch_plasmicapp_cli;
+diff --git a/node_modules/create-plasmic-app/dist/utils/codegen.d.ts b/node_modules/create-plasmic-app/dist/utils/codegen.d.ts
+index b3c1f07..4c60d97 100644
+--- a/node_modules/create-plasmic-app/dist/utils/codegen.d.ts
++++ b/node_modules/create-plasmic-app/dist/utils/codegen.d.ts
+@@ -4,5 +4,6 @@ export declare function installCodegenDeps(opts: {
+ export declare function runCodegenSync(opts: {
+     projectId: string;
+     projectApiToken: string | undefined;
++    projectHost: string | undefined;
+     projectPath: string;
+ }): Promise<void>;
+diff --git a/node_modules/create-plasmic-app/dist/utils/codegen.js b/node_modules/create-plasmic-app/dist/utils/codegen.js
+index 5144788..5a1d9f0 100644
+--- a/node_modules/create-plasmic-app/dist/utils/codegen.js
++++ b/node_modules/create-plasmic-app/dist/utils/codegen.js
+@@ -12,22 +12,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.runCodegenSync = exports.installCodegenDeps = void 0;
+ const lib_1 = require("../lib");
+ const cmd_utils_1 = require("../utils/cmd-utils");
+-const npm_utils_1 = require("../utils/npm-utils");
+ function installCodegenDeps(opts) {
+     return __awaiter(this, void 0, void 0, function* () {
+         const { projectPath } = opts;
+-        return yield (0, npm_utils_1.installUpgrade)("@plasmicapp/cli", { workingDir: projectPath });
++        return yield lib_1.installCli(projectPath);
+     });
+ }
+ exports.installCodegenDeps = installCodegenDeps;
+ function runCodegenSync(opts) {
+     return __awaiter(this, void 0, void 0, function* () {
+-        const { projectId, projectApiToken, projectPath } = opts;
++        const { projectId, projectApiToken, projectHost, projectPath } = opts;
+         (0, lib_1.banner)("SYNCING PLASMIC COMPONENTS");
+         const project = projectApiToken
+             ? `${projectId}:${projectApiToken}`
+             : projectId;
+-        yield (0, cmd_utils_1.spawnOrFail)(`npx plasmic sync --yes -p ${project}`, projectPath);
++        yield (0, cmd_utils_1.spawnOrFail)(`npx plasmic sync --yes -p ${project}${projectHost ? ` --host ${projectHost}` : ""}`, projectPath);
+     });
+ }
+ exports.runCodegenSync = runCodegenSync;
+diff --git a/node_modules/create-plasmic-app/dist/utils/strategy.d.ts b/node_modules/create-plasmic-app/dist/utils/strategy.d.ts
+index cf1fcbf..cc36881 100644
+--- a/node_modules/create-plasmic-app/dist/utils/strategy.d.ts
++++ b/node_modules/create-plasmic-app/dist/utils/strategy.d.ts
+@@ -11,6 +11,7 @@ export interface ConfigArgs {
+     jsOrTs: JsOrTs;
+     scheme: SchemeType;
+     projectApiToken: string | undefined;
++    projectHost: string | undefined;
+     platformOptions: PlatformOptions;
+ }
+ export interface GenerateFilesArgs {
+@@ -19,6 +20,7 @@ export interface GenerateFilesArgs {
+     scheme: SchemeType;
+     projectId: string;
+     projectApiToken: string | undefined;
++    projectHost: string | undefined;
+     platformOptions: PlatformOptions;
+ }
+ export interface BuildArgs {
+diff --git a/node_modules/create-plasmic-app/src/lib.ts b/node_modules/create-plasmic-app/src/lib.ts
+index 6794800..14482ec 100644
+--- a/node_modules/create-plasmic-app/src/lib.ts
++++ b/node_modules/create-plasmic-app/src/lib.ts
+@@ -1,9 +1,12 @@
+ import { auth, getProjectApiToken, setMetadataEnv } from "@plasmicapp/cli";
+ import chalk from "chalk";
++import { promises as fs } from "fs";
+ import * as path from "upath";
+ import validateProjectName from "validate-npm-package-name";
++import { makePlasmicPatch_plasmicapp_cli } from "./templates/patches/@plasmicapp+cli+0.1.330.patch";
++import { spawnOrFail } from "./utils/cmd-utils";
+ import { ensureTsconfig, overwriteReadme } from "./utils/file-utils";
+-import { detectPackageManager } from "./utils/npm-utils";
++import { detectPackageManager, installUpgrade } from "./utils/npm-utils";
+ import { CPAStrategy } from "./utils/strategy";
+ import {
+   JsOrTs,
+@@ -31,6 +34,7 @@ export interface CreatePlasmicAppArgs {
+   scheme: SchemeType;
+   jsOrTs: JsOrTs;
+   projectApiToken?: string;
++  projectHost?: string;
+   template?: string;
+ }
+ 
+@@ -38,6 +42,7 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+   const {
+     resolvedProjectPath,
+     projectId,
++    projectHost,
+     platform,
+     platformOptions,
+     scheme,
+@@ -49,6 +54,7 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+   console.log("1. Authenticate with Plasmic");
+   console.log("2. Create a React/Next/Gatsby repo");
+   console.log("3. Integrate with Plasmic");
++  console.log(`4. Host: ${projectHost || "N/A"}`);
+ 
+   // Authenticate with Plasmic
+   banner("AUTHENTICATING WITH PLASMIC");
+@@ -56,11 +62,11 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+     console.log("Skipping auth; using the given project API token.");
+   } else {
+     const promise = auth({
+-      host: "https://studio.plasmic.app",
++      host: "https://squirrel.dev",
+       check: true,
+     })
+       .catch(() => {
+-        return auth({ host: "https://studio.plasmic.app" });
++        return auth({ host: "https://squirrel.dev" });
+       })
+       .catch(() => {
+         throw new Error(
+@@ -122,6 +128,7 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+     projectId,
+     projectPath: resolvedProjectPath,
+     projectApiToken,
++    projectHost,
+     jsOrTs,
+     scheme,
+     platformOptions,
+@@ -134,6 +141,7 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+     scheme,
+     projectId,
+     projectApiToken,
++    projectHost,
+     platformOptions,
+   });
+ 
+@@ -185,6 +193,30 @@ export async function create(args: CreatePlasmicAppArgs): Promise<void> {
+   }
+ }
+ 
++export async function installCli(projectPath: string) {
++  await fs.mkdir(path.join(projectPath, "patches"));
++  await fs.writeFile(
++    path.join(projectPath, "patches", "@plasmicapp+cli+0.1.330.patch"),
++    makePlasmicPatch_plasmicapp_cli()
++  );
++
++  const packageJsonFile = path.join(projectPath, "package.json");
++  const packageJson = JSON.parse(await fs.readFile(packageJsonFile, 'utf8'));
++
++  await fs.writeFile(
++    packageJsonFile,
++    JSON.stringify({ ...packageJson, scripts: { ...packageJson.scripts, postinstall: "patch-package" } }, null, 2)
++  );
++
++  await installUpgrade("patch-package@^6", { workingDir: projectPath });
++
++  const result = await installUpgrade("@plasmicapp/cli@0.1.330", { workingDir: projectPath });
++
++  await spawnOrFail("npx patch-package", projectPath);
++
++  return result;
++}
++
+ export function checkValidName(name?: string): boolean {
+   // User need to specify a truthy value
+   if (!name) {
+diff --git a/node_modules/create-plasmic-app/src/nextjs/nextjs.ts b/node_modules/create-plasmic-app/src/nextjs/nextjs.ts
+index 29da48c..30144dc 100644
+--- a/node_modules/create-plasmic-app/src/nextjs/nextjs.ts
++++ b/node_modules/create-plasmic-app/src/nextjs/nextjs.ts
+@@ -10,7 +10,7 @@ import {
+ } from "../utils/file-utils";
+ import { ensure } from "../utils/lang-utils";
+ import { installUpgrade } from "../utils/npm-utils";
+-import { CPAStrategy, GenerateFilesArgs } from "../utils/strategy";
++import { CPAStrategy, GenerateFilesArgs, InstallArgs } from "../utils/strategy";
+ import { makeCatchallPage_app_loader } from "./templates/app-loader/catchall-page";
+ import { makePlasmicHostPage_app_loader } from "./templates/app-loader/plasmic-host";
+ import { makePlasmicInit_app_loader } from "./templates/app-loader/plasmic-init";
+@@ -99,7 +99,7 @@ module.exports = nextConfig;`
+ };
+ 
+ async function generateFilesAppDir(args: GenerateFilesArgs) {
+-  const { projectPath, jsOrTs, projectId, projectApiToken } = args;
++  const { projectPath, jsOrTs, projectId, projectApiToken, projectHost } = args;
+ 
+   // Delete existing pages
+   deleteGlob(path.join(projectPath, "app", "page.*"));
+@@ -107,7 +107,7 @@ async function generateFilesAppDir(args: GenerateFilesArgs) {
+   // ./plasmic-init.ts
+   await fs.writeFile(
+     path.join(projectPath, `plasmic-init.${jsOrTs}`),
+-    makePlasmicInit_app_loader(projectId, ensure(projectApiToken))
++    makePlasmicInit_app_loader(projectId, ensure(projectApiToken), projectHost)
+   );
+ 
+   // ./plasmic-init-client.ts
+@@ -132,7 +132,7 @@ async function generateFilesAppDir(args: GenerateFilesArgs) {
+ }
+ 
+ async function generateFilesPagesDir(args: GenerateFilesArgs) {
+-  const { projectPath, scheme, jsOrTs, projectId, projectApiToken } = args;
++  const { projectPath, scheme, jsOrTs, projectId, projectApiToken, projectHost } = args;
+ 
+   // Delete existing pages
+   deleteGlob(path.join(projectPath, "pages", "*.*"));
+@@ -141,7 +141,7 @@ async function generateFilesPagesDir(args: GenerateFilesArgs) {
+     // ./plasmic-init.ts
+     await fs.writeFile(
+       path.join(projectPath, `plasmic-init.${jsOrTs}`),
+-      makePlasmicInit_pages_loader(projectId, ensure(projectApiToken))
++      makePlasmicInit_pages_loader(projectId, ensure(projectApiToken), projectHost)
+     );
+ 
+     // ./pages/plasmic-host.tsx
+@@ -175,6 +175,7 @@ async function generateFilesPagesDir(args: GenerateFilesArgs) {
+     await runCodegenSync({
+       projectId,
+       projectApiToken,
++      projectHost,
+       projectPath,
+     });
+ 
+diff --git a/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts b/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
+index 1117dc3..cf87a8b 100644
+--- a/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
++++ b/node_modules/create-plasmic-app/src/nextjs/templates/app-loader/plasmic-init.ts
+@@ -1,6 +1,7 @@
+ export function makePlasmicInit_app_loader(
+   projectId: string,
+-  projectApiToken: string
++  projectApiToken: string,
++  projectHost?: string
+ ): string {
+   return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs/react-server-conditional";
+ 
+@@ -10,7 +11,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
+diff --git a/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts b/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
+index fac8629..65b4851 100644
+--- a/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
++++ b/node_modules/create-plasmic-app/src/nextjs/templates/pages-loader/plasmic-init.ts
+@@ -1,6 +1,7 @@
+ export function makePlasmicInit_pages_loader(
+   projectId: string,
+-  projectApiToken: string
++  projectApiToken: string,
++  projectHost?: string
+ ): string {
+   return `import { initPlasmicLoader } from "@plasmicapp/loader-nextjs";
+ 
+@@ -10,7 +11,8 @@ export const PLASMIC = initPlasmicLoader({
+       id: "${projectId}",
+       token: "${projectApiToken}",
+     },
+-  ],
++  ],${projectHost ? `
++  host: "${projectHost}",` : ""}
+ 
+   // By default Plasmic will use the last published version of your project.
+   // For development, you can set preview to true, which will use the unpublished
+diff --git a/node_modules/create-plasmic-app/src/templates/patches/@plasmicapp+cli+0.1.330.patch.ts b/node_modules/create-plasmic-app/src/templates/patches/@plasmicapp+cli+0.1.330.patch.ts
+new file mode 100644
+index 0000000..a3d3601
+--- /dev/null
++++ b/node_modules/create-plasmic-app/src/templates/patches/@plasmicapp+cli+0.1.330.patch.ts
+@@ -0,0 +1,296 @@
++export function makePlasmicPatch_plasmicapp_cli(): string {
++    return `diff --git a/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts b/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
++index 9ac892e..f696f62 100644
++--- a/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
+++++ b/node_modules/@plasmicapp/cli/dist/actions/sync.d.ts
++@@ -2,6 +2,7 @@ import { CommonArgs } from "..";
++ import { Metadata } from "../utils/get-context";
++ export interface SyncArgs extends CommonArgs {
++     projects: readonly string[];
+++    host: string;
++     forceOverwrite: boolean;
++     yes?: boolean;
++     force?: boolean;
++diff --git a/node_modules/@plasmicapp/cli/dist/index.js b/node_modules/@plasmicapp/cli/dist/index.js
++index c2e64c2..670452a 100755
++--- a/node_modules/@plasmicapp/cli/dist/index.js
+++++ b/node_modules/@plasmicapp/cli/dist/index.js
++@@ -501873,7 +501873,7 @@ var handleError = (p) => {
++ };
++ 
++ // src/utils/config-utils.ts
++-var DEFAULT_HOST = process.env.PLASMIC_DEFAULT_HOST || "https://studio.plasmic.app";
+++var DEFAULT_HOST = process.env.PLASMIC_DEFAULT_HOST || "https://squirrel.dev";
++ var AUTH_FILE_NAME = ".plasmic.auth";
++ var CONFIG_FILE_NAME = "plasmic.json";
++ var LOCK_FILE_NAME = "plasmic.lock";
++@@ -502270,7 +502270,7 @@ var PlasmicApi = class {
++   }
++   get codegenHost() {
++     if (!this.auth.host || this.auth.host === DEFAULT_HOST) {
++-      return "https://codegen.plasmic.app";
+++      return "https://api.squirrel.dev";
++     } else {
++       return this.auth.host;
++     }
++@@ -503432,7 +503432,7 @@ async function getContext(args, {
++ } = {}) {
++   if (!args.baseDir)
++     args.baseDir = process.cwd();
++-  const auth2 = enableSkipAuth ? await getCurrentOrDefaultAuth(args) : await getOrInitAuth(args);
+++  const auth2 = enableSkipAuth ? await getCurrentOrDefaultAuth({ ...args, enableSkipAuth }) : await getOrInitAuth(args);
++   if (auth2.host.startsWith(DEFAULT_HOST)) {
++     Sentry.init({
++       dsn: "https://3ed4eb43d28646e381bf3c50cff24bd6@o328029.ingest.sentry.io/5285892"
++@@ -503480,12 +503480,13 @@ async function getContext(args, {
++   return context;
++ }
++ async function getCurrentOrDefaultAuth(args) {
++-  const auth2 = await getCurrentAuth(args.auth);
+++  // const auth2 = await getCurrentAuth(args.auth);
+++  const auth2 = await getOrStartAuth(args);
++   if (auth2) {
++     return auth2;
++   }
++   return {
++-    host: DEFAULT_HOST,
+++    host: args.host || DEFAULT_HOST,
++     user: "",
++     token: ""
++   };
++@@ -505605,7 +505606,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++       describe: "Enable skipping auth, just initialize a plasmic.json",
++       type: "boolean",
++       default: false
++-    }).option("host", getYargsOption("host", "https://studio.plasmic.app")).option("platform", getYargsOption("platform")).option("code-lang", getYargsOption("codeLang")).option("code-scheme", getYargsOption("codeScheme")).option("react-runtime", {
+++    }).option("host", getYargsOption("host", DEFAULT_HOST)).option("platform", getYargsOption("platform")).option("code-lang", getYargsOption("codeLang")).option("code-scheme", getYargsOption("codeScheme")).option("react-runtime", {
++       describe: "React runtime to use; either classic or automatic",
++       choices: ["classic", "automatic"],
++       default: "classic"
++@@ -505622,7 +505623,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++     yags.option("host", {
++       describe: "Plasmic host to use",
++       type: "string",
++-      default: "https://studio.plasmic.app"
+++      default: DEFAULT_HOST
++     }).option("check", {
++       alias: "c",
++       describe: "Just verifies if the current credentials are valid.",
++@@ -505676,7 +505677,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   (yags) => yags.option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }).option("projects", {
++     alias: "p",
++     describe: "ID of plasmic project to check",
++@@ -505741,7 +505742,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   }).option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }),
++   (argv) => handleError(projectToken(argv))
++ ).command(
++@@ -505754,7 +505755,7 @@ import_yargs.default.usage("Usage: $0 <command> [options]").option("auth", {
++   }).option("host", {
++     describe: "Plasmic host to use",
++     type: "string",
++-    default: "https://studio.plasmic.app"
+++    default: DEFAULT_HOST
++   }).option("format", {
++     describe: 'Output format. Either "json", "po" or "lingui"',
++     type: "string",
++@@ -505802,6 +505803,10 @@ function configureSyncArgs(yags, includeQuietOption = true) {
++     describe: "One or more projects to sync, separated by comma. Version constraints can be specified using @. Example: projectid, projectid@>=version",
++     type: "array",
++     default: []
+++  }).option("host", {
+++    describe: "Plasmic host to use",
+++    type: "string",
+++    default: DEFAULT_HOST
++   }).option("force", {
++     type: "boolean",
++     describe: "Force sync to bypass specified version ranges.",
++diff --git a/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts b/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
++index e9534eb..d5b9980 100644
++--- a/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
+++++ b/node_modules/@plasmicapp/cli/dist/utils/get-context.d.ts
++@@ -1,7 +1,7 @@
++ import { CommonArgs } from "../index";
++ import { PlasmicContext, PlasmicLock } from "./config-utils";
++ export declare function readLock(lockFile: string): PlasmicLock;
++-export declare function getContext(args: CommonArgs, { enableSkipAuth, skipMissingFiles, skipInit, }?: {
+++export declare function getContext(args: CommonArgs & { host: string }, { enableSkipAuth, skipMissingFiles, skipInit, }?: {
++     enableSkipAuth?: boolean;
++     skipMissingFiles?: boolean;
++     skipInit?: boolean;
++@@ -9,7 +9,7 @@ export declare function getContext(args: CommonArgs, { enableSkipAuth, skipMissi
++ /**
++  * Use empty user/token to signify no auth (only returning to provide a default host).
++  */
++-export declare function getCurrentOrDefaultAuth(args: CommonArgs): Promise<import("./config-utils").AuthConfig>;
+++export declare function getCurrentOrDefaultAuth(args: CommonArgs & { host: string; enableSkipAuth?: boolean }): Promise<import("./config-utils").AuthConfig>;
++ /**
++  * Table of where this metadata will be set
++  *
++diff --git a/node_modules/@plasmicapp/cli/src/actions/sync.ts b/node_modules/@plasmicapp/cli/src/actions/sync.ts
++index 06d5710..e8bddf6 100644
++--- a/node_modules/@plasmicapp/cli/src/actions/sync.ts
+++++ b/node_modules/@plasmicapp/cli/src/actions/sync.ts
++@@ -61,6 +61,7 @@ import { upsertStyleTokens } from "./sync-styles";
++ 
++ export interface SyncArgs extends CommonArgs {
++   projects: readonly string[];
+++  host: string;
++   forceOverwrite: boolean;
++   yes?: boolean;
++   force?: boolean;
++diff --git a/node_modules/@plasmicapp/cli/src/api.ts b/node_modules/@plasmicapp/cli/src/api.ts
++index 058fe45..2dfcc68 100644
++--- a/node_modules/@plasmicapp/cli/src/api.ts
+++++ b/node_modules/@plasmicapp/cli/src/api.ts
++@@ -545,7 +545,7 @@ export class PlasmicApi {
++ 
++   private get codegenHost() {
++     if (!this.auth.host || this.auth.host === DEFAULT_HOST) {
++-      return "https://codegen.plasmic.app";
+++      return "https://api.squirrel.dev";
++     } else {
++       return this.auth.host;
++     }
++diff --git a/node_modules/@plasmicapp/cli/src/index.ts b/node_modules/@plasmicapp/cli/src/index.ts
++index 1ee2787..3fb6f35 100644
++--- a/node_modules/@plasmicapp/cli/src/index.ts
+++++ b/node_modules/@plasmicapp/cli/src/index.ts
++@@ -15,6 +15,7 @@ import { UploadBundleArgs, uploadJsBundle } from "./actions/upload-bundle";
++ import { WatchArgs, watchProjects } from "./actions/watch";
++ import { handleError } from "./utils/error";
++ import { ExportArgs, exportProjectsCli } from "./actions/export";
+++import { DEFAULT_HOST } from "@plasmicapp/cli/src/utils/config-utils";
++ 
++ if (process.env.DEBUG_CHDIR) {
++   process.chdir(process.env.DEBUG_CHDIR);
++@@ -59,7 +60,7 @@ yargs
++           type: "boolean",
++           default: false,
++         })
++-        .option("host", getYargsOption("host", "https://studio.plasmic.app"))
+++        .option("host", getYargsOption("host", DEFAULT_HOST))
++         .option("platform", getYargsOption("platform"))
++         .option("code-lang", getYargsOption("codeLang"))
++         .option("code-scheme", getYargsOption("codeScheme"))
++@@ -89,7 +90,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("check", {
++           alias: "c",
++@@ -153,7 +154,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("projects", {
++           alias: "p",
++@@ -243,7 +244,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         }),
++     (argv) => handleError(projectToken.projectToken(argv))
++   )
++@@ -261,7 +262,7 @@ yargs
++         .option("host", {
++           describe: "Plasmic host to use",
++           type: "string",
++-          default: "https://studio.plasmic.app",
+++          default: DEFAULT_HOST,
++         })
++         .option("format", {
++           describe: 'Output format. Either "json", "po" or "lingui"',
++@@ -341,6 +342,11 @@ function configureSyncArgs(
++       type: "array",
++       default: [],
++     })
+++    .option("host", {
+++      describe: "Plasmic host to use",
+++      type: "string",
+++      default: DEFAULT_HOST,
+++    })
++     .option("force", {
++       type: "boolean",
++       describe: "Force sync to bypass specified version ranges.",
++diff --git a/node_modules/@plasmicapp/cli/src/utils/config-utils.ts b/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
++index 739918c..18bf440 100644
++--- a/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
+++++ b/node_modules/@plasmicapp/cli/src/utils/config-utils.ts
++@@ -12,7 +12,7 @@ import {
++ } from "./file-utils";
++ 
++ export const DEFAULT_HOST =
++-  process.env.PLASMIC_DEFAULT_HOST || "https://studio.plasmic.app";
+++  process.env.PLASMIC_DEFAULT_HOST || "https://squirrel.dev";
++ 
++ // Default filenames
++ export const AUTH_FILE_NAME = ".plasmic.auth";
++diff --git a/node_modules/@plasmicapp/cli/src/utils/get-context.ts b/node_modules/@plasmicapp/cli/src/utils/get-context.ts
++index e1a36d8..ed6bd30 100644
++--- a/node_modules/@plasmicapp/cli/src/utils/get-context.ts
+++++ b/node_modules/@plasmicapp/cli/src/utils/get-context.ts
++@@ -8,7 +8,7 @@ import { logger } from "../deps";
++ import { CommonArgs } from "../index";
++ import { runNecessaryMigrations } from "../migrations/migrations";
++ import { HandledError } from "../utils/error";
++-import { getCurrentAuth } from "./auth-utils";
+++import { getCurrentAuth, getOrStartAuth } from "./auth-utils";
++ import {
++   DEFAULT_HOST,
++   findConfigFile,
++@@ -298,7 +298,7 @@ async function resolveMissingFilesInConfig(
++ }
++ 
++ export async function getContext(
++-  args: CommonArgs,
+++  args: CommonArgs & { host: string },
++   {
++     enableSkipAuth = false,
++     skipMissingFiles = false,
++@@ -311,7 +311,7 @@ export async function getContext(
++ ): Promise<PlasmicContext> {
++   if (!args.baseDir) args.baseDir = process.cwd();
++   const auth = enableSkipAuth
++-    ? await getCurrentOrDefaultAuth(args)
+++    ? await getCurrentOrDefaultAuth({ ...args, enableSkipAuth })
++     : await getOrInitAuth(args);
++ 
++   /** Sentry */
++@@ -379,14 +379,15 @@ export async function getContext(
++ /**
++  * Use empty user/token to signify no auth (only returning to provide a default host).
++  */
++-export async function getCurrentOrDefaultAuth(args: CommonArgs) {
++-  const auth = await getCurrentAuth(args.auth);
+++export async function getCurrentOrDefaultAuth(args: CommonArgs & { host: string; enableSkipAuth?: boolean }) {
+++  // const auth = await getCurrentAuth(args.auth);
+++  const auth = await getOrStartAuth(args);
++   if (auth) {
++     return auth;
++   }
++ 
++   return {
++-    host: DEFAULT_HOST,
+++    host: args.host || DEFAULT_HOST,
++     user: "",
++     token: "",
++   };`;
++}
+diff --git a/node_modules/create-plasmic-app/src/utils/codegen.ts b/node_modules/create-plasmic-app/src/utils/codegen.ts
+index 9a0bb77..f03e547 100644
+--- a/node_modules/create-plasmic-app/src/utils/codegen.ts
++++ b/node_modules/create-plasmic-app/src/utils/codegen.ts
+@@ -1,18 +1,18 @@
+-import { banner } from "../lib";
++import { banner, installCli } from "../lib";
+ import { spawnOrFail } from "../utils/cmd-utils";
+-import { installUpgrade } from "../utils/npm-utils";
+ 
+ export async function installCodegenDeps(opts: { projectPath: string }) {
+   const { projectPath } = opts;
+-  return await installUpgrade("@plasmicapp/cli", { workingDir: projectPath });
++  return await installCli(projectPath);
+ }
+ 
+ export async function runCodegenSync(opts: {
+   projectId: string;
+   projectApiToken: string | undefined;
++  projectHost: string | undefined;
+   projectPath: string;
+ }) {
+-  const { projectId, projectApiToken, projectPath } = opts;
++  const { projectId, projectApiToken, projectHost, projectPath } = opts;
+ 
+   banner("SYNCING PLASMIC COMPONENTS");
+ 
+@@ -20,5 +20,9 @@ export async function runCodegenSync(opts: {
+     ? `${projectId}:${projectApiToken}`
+     : projectId;
+ 
+-  await spawnOrFail(`npx plasmic sync --yes -p ${project}`, projectPath);
++  await spawnOrFail(`npx plasmic sync --yes -p ${project}${
++    projectHost
++      ? ` --host ${projectHost}`
++      : ""
++  }`, projectPath);
+ }
+diff --git a/node_modules/create-plasmic-app/src/utils/strategy.ts b/node_modules/create-plasmic-app/src/utils/strategy.ts
+index 0636d02..1383593 100644
+--- a/node_modules/create-plasmic-app/src/utils/strategy.ts
++++ b/node_modules/create-plasmic-app/src/utils/strategy.ts
+@@ -13,6 +13,7 @@ export interface ConfigArgs {
+   jsOrTs: JsOrTs;
+   scheme: SchemeType;
+   projectApiToken: string | undefined;
++  projectHost: string | undefined;
+   platformOptions: PlatformOptions;
+ }
+ 
+@@ -22,6 +23,7 @@ export interface GenerateFilesArgs {
+   scheme: SchemeType;
+   projectId: string;
+   projectApiToken: string | undefined;
++  projectHost: string | undefined;
+   platformOptions: PlatformOptions;
+ }
+ 

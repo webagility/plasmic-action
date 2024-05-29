@@ -7,7 +7,6 @@ import {
   RunAction,
   PlasmicAction,
 } from "./actions";
-import { initSentry, captureException } from "./sentry";
 import { setOutputs } from "./util";
 
 async function run(): Promise<void> {
@@ -17,6 +16,7 @@ async function run(): Promise<void> {
       githubToken: core.getInput("github_token"),
       projectId: core.getInput("project_id"),
       projectApiToken: core.getInput("project_api_token"),
+      projectHost: core.getInput("project_host"),
       platform: core.getInput("platform") as Platform,
       language: core.getInput("language") as Language,
       scheme: core.getInput("scheme") as Scheme,
@@ -28,13 +28,13 @@ async function run(): Promise<void> {
       skipIfPlasmic: !!core.getInput("skip_if_plasmic"),
     };
 
-    initSentry(options);
+    // initSentry(options);
 
     const action = new PlasmicAction(options);
     const outputs = await action.run();
     setOutputs(outputs);
   } catch (error: any) {
-    captureException(error);
+    // captureException(error);
     core.setFailed(error.message || error);
   }
 }
